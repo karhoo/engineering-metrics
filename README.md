@@ -18,7 +18,7 @@ pip install git+ssh://git@github.com/karhoo/engineering_metrics.git#egg=engineer
 
 ### Docs
 
-I don't currently have a solution for hosting the doc pages. Instead you will need to view them locally. To do this, clone the repo, build the docs and view in your favorite browser (or one you don't like but have installed).
+Documentation site is on [readthedocs](https://engineering-metrics.readthedocs.io/en/latest/). To view them locally clone the repo, build the docs and view in your favorite browser (or one you don't like but have installed).
 
 ```sh
 # Requires python 3.6. Get you virtual env out.
