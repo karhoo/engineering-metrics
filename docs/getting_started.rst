@@ -11,13 +11,13 @@ Jira Cloud provides access to the api through a token. Get your token from `Atla
 Jira Server
 ___________
 
-For Jira server we require oAuth. To set this up follow this `guide <https://github.com/karhoo/engineering_metrics/tree/develop/token_generator>`_.
+For Jira server we require oAuth. To set this up follow this `guide <https://github.com/karhoo/engineering_metrics/tree/master/token_generator>`_.
 
 Create your first report
 ________________________
 
 
-There is an `example <https://github.com/karhoo/engineering_metrics/tree/develop/examples>`_ as a Jupyter notebook. This won't run in github as it needs authentication, so until I get it hosted you can run it locally using `your jupyter setup <https://jupyter.readthedocs.io/en/latest/install.html>`_.
+There is an `example <https://github.com/karhoo/engineering_metrics/tree/master/examples>`_ as a Jupyter notebook. This won't run in github as it needs authentication, so until I get it hosted you can run it locally using `your jupyter setup <https://jupyter.readthedocs.io/en/latest/install.html>`_.
 
 Otherwise a quick start (after setting up you oAuth credentials) is
 given here.::
