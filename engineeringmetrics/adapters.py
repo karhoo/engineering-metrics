@@ -10,6 +10,7 @@ from typing import List, Dict
 
 from configparser import ConfigParser
 from jira import JIRA, client
+import json
 import os
 
 
@@ -184,6 +185,8 @@ class JiraIssue(dict):
             for more details.
         description (string):
             Details of the issue.
+        epic_links (string):
+            Epic this issue is in.
         fix_version (string):
             The latest fix version associated with this issue.
         flow_log (:py:class:`FlowLog`):
@@ -238,7 +241,7 @@ class JiraIssue(dict):
     for a JiraIssues to be used as a row in a `pandas dataframe <https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.from_dict.html#pandas-dataframe-from-dict>`_
     with each key mapping to a column.
 
-    For each atrribute (with underscore style naming) you will find a corresponding key entry
+    For each attribute (with underscore style naming) you will find a corresponding key entry
     (in camel case) in the dictionary with the exception of ``assignee`` and ``comments``. In addition 
     the following keys are added without a corresponding class attribute (but can be generated from an
     attribute if so desired):
@@ -267,15 +270,19 @@ class JiraIssue(dict):
 
         if issue.fields.assignee:
             self.assignee = issue.fields.assignee.raw
-            self['assigneeName'] = self.assignee['displayName']
-            self['assigneeEmail'] = self.assignee['emailAddress']
+            self['assigneeName'] = self.assignee.get('displayName')
+            self['assigneeEmail'] = self.assignee.get('emailAddress')
 
-        self.comments = list(
-            map(lambda c: c.raw, issue.fields.comment.comments))
-        if len(self.comments) > 0:
-            self['lastComment'] = self.comments[0]['body']
-            self['lastCommentDate'] = self.comments[0]['created']
-
+        try:
+            self.comments = list(
+                map(lambda c: c.raw, issue.fields.comment.comments))
+            if len(self.comments) > 0:
+                self['lastComment'] = self.comments[0]['body']
+                self['lastCommentDate'] = self.comments[0]['created']
+            self['comments'] = json.dumps([c.get('body') for c in self.comments])
+        except:
+            pass
+        
         self.created = parse(issue.fields.created)
         self['created'] = self.created
 
@@ -325,15 +332,23 @@ class JiraIssue(dict):
 
         # The following allows you to debug individual fields per
         # https://stackoverflow.com/questions/30615846/python-and-jira-get-fields-from-specific-issue
-        # for field_name in issue.raw['fields']:
-        #    print("Field:", field_name, "Value:", issue.raw['fields'][field_name])
-        # print("============================================================")
+        #for field_name in issue.raw['fields']:
+        #   print('-------')
+        #   print(f"Field: '{field_name}', Value: {issue.raw['fields'][field_name]}")
+        #print(type(issue.raw))
+        #print(dir(issue.raw))
+        #print(issue.raw.keys())
+        #print("============================================================")
         # 10001 is old JIRA.  New JIRA has a whole new parent thing going on
         if getattr(issue.fields, 'parent', None):
             self['epiclink'] = issue.fields.parent.key
             self['epicName'] = issue.fields.parent.fields.summary
         else:
             self['epiclink'] = issue.fields.customfield_10001
+
+        # Story points: https://community.atlassian.com/t5/Answers-Developer-Questions/Story-Points-CustomField-Table/qaq-p/575830
+        # Doesn't work.  Can't get see this custom field in issue :-/
+        #self['storyPoints'] = issue.fields.customfield_10006
 
         self.issue_links = []
         for link in issue.fields.issuelinks:
@@ -725,8 +740,12 @@ class Jira:
         'updated'
     ]
 
-    def _get_issues_for_projects(self, project_ids: List[str],  max_results: int = False) -> Dict[str, JiraProject]:
+    def _get_issues_for_projects(self, project_ids: List[str],  max_results: int = False, get_comments: bool = True) -> Dict[str, JiraProject]:
 
+        issuefields = self.__ISSUES_FIELDS__.copy()
+        if not get_comments:
+            issuefields.remove('comment')
+            
         issues_by_project = {}
         for pid in project_ids:
             pdata = self._client.project(pid)
@@ -736,7 +755,7 @@ class Jira:
                 query_string,
                 maxResults=max_results,
                 expand='changelog',
-                fields=self.__ISSUES_FIELDS__
+                fields=issuefields
             )
             proj = JiraProject(pdata, query_string, issues)
 
@@ -745,7 +764,7 @@ class Jira:
 
         return issues_by_project
 
-    def populate_projects(self, projectids: List[str], max_results: int = False) -> Dict[str, JiraProject]:
+    def populate_projects(self, projectids: List[str], max_results: int = False, get_comments: bool = True) -> Dict[str, JiraProject]:
         """Populate the Jira instance with data from the Jira app.
 
         Given a list of ids this method will build a dictionary containing issues from
@@ -755,17 +774,19 @@ class Jira:
 
         Args:
             projectids: A list of project ids for which you want to pull issues.
-            max_results: Limit the number of issues returned by the query.
+            max_results (optional): Limit the number of issues returned by the query.
+            get_comments (optional): Retrieve all comments for Jira issues
 
         Returns:
             Dict[str, JiraProject]: A dictionary of JiraProjects. Each key will be the id for the corresponding project.
         """
-        projects = self._get_issues_for_projects(projectids,  max_results)
+
+        projects = self._get_issues_for_projects(projectids,  max_results, get_comments)
         self._datastore['projects'] = {
             **self._datastore['projects'], **projects}
         return projects
 
-    def get_project_issues(self, projectid: str, max_results: int = False) -> JiraProject:
+    def get_project_issues(self, projectid: str, max_results: int = False, get_comments: bool = True) -> JiraProject:
         """Get issues for a particular project key.
 
         Given a project key this method will retuen a list of issues from
@@ -775,18 +796,19 @@ class Jira:
 
         Args:
             projectid: A project id for which you want to pull issues.
-            max_results: Limit the number of issues returned by the query.
+            max_results (optional): Limit the number of issues returned by the query.
+            comments (optional): Retrieve all comments for Jira issues
 
         Returns:
             JiraProject: A list of JiraIssue instances.
         """
         project = self._get_issues_for_projects(
-            [projectid],  max_results).get(projectid, JQLResult(projectid, projectid))
+            [projectid],  max_results, get_comments).get(projectid, JQLResult(projectid, projectid))
         self._datastore[projectid] = project
         return project
 
-    def populate_from_jql(self, query: str = None, max_results: int = False, label: str = "JQL") -> JQLResult:
-        """Populate the Jira instance with data from the Jira app accorging to a JQL
+    def populate_from_jql(self, query: str = None, max_results: int = False, label: str = "JQL", get_comments: bool = True) -> JQLResult:
+        """Populate the Jira instance with data from the Jira app according to a JQL
         string.
 
         Given a JQL string this method will build a dictionary containing issues returned
@@ -802,15 +824,22 @@ class Jira:
             label (optional):
                 A string label to store the query result internally. If not set the query
                 result is stored under the key 'JQL' and overwrites any previous query results.
+            comments (optional): 
+                Retrieve all comments for Jira issues
 
         Returns:
             JQLResult: an instance of :py:class:`JQLResult`
         """
+        
         if query == None:
             raise ValueError("query string is required to get issues")
 
+        issuefields = self.__ISSUES_FIELDS__.copy()
+        if not get_comments:
+            issuefields.remove('comment')
+              
         result = self._client.search_issues(
-            query, maxResults=max_results, expand='changelog', fields=self.__ISSUES_FIELDS__)
+            query, maxResults=max_results, expand='changelog', fields=issuefields)
         query_result = JQLResult(query, label, result)
         self._datastore[query_result.label] = query_result
         return query_result
